@@ -4,12 +4,15 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { loginUser } from '@/lib/authApi';
-import { Building2, ArrowRight, ShieldCheck, Mail, Lock, AlertCircle, Loader2 } from 'lucide-react';
+import { Building2, ArrowRight, ShieldCheck, Mail, Lock, AlertCircle, Loader2, Eye, EyeOff } from 'lucide-react';
+
+import { toast } from '@/components/Toast';
 
 export default function LoginPage() {
   const router = useRouter();
-  const [identifier, setIdentifier] = useState('');
-  const [password, setPassword] = useState('');
+  const [identifier, setIdentifier] = useState('tenant.test@renthome.com');
+  const [password, setPassword] = useState('Tenant@123');
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -21,6 +24,8 @@ export default function LoginPage() {
     try {
       const res = await loginUser(identifier, password);
       const role = res.user?.userType;
+
+      toast.success(`Welcome back, ${res.user?.name || 'User'}!`);
 
       if (role === 'LANDLORD') {
         router.push('/landlord/dashboard');
@@ -34,13 +39,16 @@ export default function LoginPage() {
     }
   };
 
-  const setDemoCredentials = (type: 'TENANT' | 'LANDLORD') => {
+  const setDemoCredentials = (type: 'TENANT' | 'LANDLORD' | 'ADMIN') => {
     if (type === 'TENANT') {
-      setIdentifier('tenant@renthome.com');
-      setPassword('Password@123');
+      setIdentifier('tenant.test@renthome.com');
+      setPassword('Tenant@123');
+    } else if (type === 'LANDLORD') {
+      setIdentifier('landlord.test@renthome.com');
+      setPassword('Landlord@123');
     } else {
-      setIdentifier('landlord@renthome.com');
-      setPassword('Password@123');
+      setIdentifier('admin.renthome@gmail.com');
+      setPassword('Admin@123');
     }
   };
 
@@ -78,6 +86,13 @@ export default function LoginPage() {
               className="px-2.5 py-1 bg-white hover:bg-indigo-50 border border-slate-200 text-indigo-700 font-medium rounded-lg transition-colors shadow-2xs"
             >
               Landlord Demo
+            </button>
+            <button
+              type="button"
+              onClick={() => setDemoCredentials('ADMIN')}
+              className="px-2.5 py-1 bg-white hover:bg-indigo-50 border border-slate-200 text-purple-700 font-medium rounded-lg transition-colors shadow-2xs"
+            >
+              Admin Demo
             </button>
           </div>
         </div>
@@ -120,13 +135,21 @@ export default function LoginPage() {
                 <Lock className="w-4 h-4" />
               </div>
               <input
-                type="password"
+                type={showPassword ? 'text' : 'password'}
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
-                className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 placeholder-slate-400 focus:bg-white focus:border-indigo-600 focus:ring-2 focus:ring-indigo-100 outline-none transition-all"
+                className="w-full pl-9 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 placeholder-slate-400 focus:bg-white focus:border-indigo-600 focus:ring-2 focus:ring-indigo-100 outline-none transition-all"
               />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
+                className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
+              >
+                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
             </div>
           </div>
 

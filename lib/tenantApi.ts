@@ -1,4 +1,5 @@
 import { apiClient } from './apiClient';
+import { getCurrentUser } from './authApi';
 
 export interface PropertyDetails {
   id: number;
@@ -14,6 +15,7 @@ export interface PropertyDetails {
   latitude?: number;
   longitude?: number;
   imageUrl?: string;
+  imageUrls?: string[];
   ownerEmail?: string;
   ownerName?: string;
   description?: string;
@@ -21,6 +23,7 @@ export interface PropertyDetails {
   address?: string;
   city?: string;
   isAvailable?: boolean;
+  status?: 'PENDING' | 'APPROVED' | 'REJECTED';
   averageRating?: number;
   totalReviews?: number;
 }
@@ -84,10 +87,49 @@ export async function fetchProperties(filters?: PropertyFilterParams): Promise<P
 
 /**
  * Fetch detailed single property by ID
- * GET /api/app/tenant/properties/{id}
+ * Supports both tenant view and landlord owner preview (even if pending approval)
+ * GET /api/app/tenant/properties/{id} with fallback to /api/app/landlord/properties/{id}
  */
 export async function fetchPropertyById(id: string | number): Promise<PropertyDetails> {
-  return apiClient.get<PropertyDetails>(`/app/tenant/properties/${id}`);
+  try {
+    return await apiClient.get<PropertyDetails>(`/app/tenant/properties/${id}`);
+  } catch (err: any) {
+    const user = getCurrentUser();
+    if (user?.userType === 'LANDLORD') {
+      try {
+        const landlordProp = await apiClient.get<any>(`/app/landlord/properties/${id}`);
+        if (landlordProp) {
+          return {
+            id: landlordProp.id,
+            name: landlordProp.title,
+            location: (landlordProp.address ? `${landlordProp.address}, ${landlordProp.city || ''}` : landlordProp.city) || '',
+            price: landlordProp.monthlyRent,
+            landlord: user.name || 'Owner',
+            category: landlordProp.category,
+            beds: landlordProp.beds || 0,
+            baths: landlordProp.baths || 0,
+            sqft: landlordProp.sqft || 0,
+            amenities: landlordProp.amenities || [],
+            latitude: landlordProp.latitude,
+            longitude: landlordProp.longitude,
+            imageUrl: landlordProp.imageUrl,
+            imageUrls: landlordProp.imageUrls || (landlordProp.imageUrl ? landlordProp.imageUrl.split(',').filter(Boolean) : []),
+            ownerEmail: user.email,
+            ownerName: user.name,
+            description: landlordProp.description,
+            securityDeposit: landlordProp.securityDeposit,
+            address: landlordProp.address,
+            city: landlordProp.city,
+            isAvailable: landlordProp.isAvailable,
+            status: landlordProp.status,
+          };
+        }
+      } catch {
+        // Fall back to original error
+      }
+    }
+    throw err;
+  }
 }
 
 /**

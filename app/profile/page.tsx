@@ -37,8 +37,9 @@ import {
   ChevronRight,
   Award,
 } from 'lucide-react';
+import RoleGuard from '@/components/RoleGuard';
 
-export default function ProfilePage() {
+function ProfileInner() {
   const router = useRouter();
 
   // Active Tab: 'details' | 'security' | 'overview'
@@ -948,5 +949,17 @@ export default function ProfilePage() {
 
       </main>
     </div>
+  );
+}
+
+export default function ProfilePage() {
+  return (
+    <RoleGuard
+      allowedRoles={['TENANT', 'LANDLORD', 'ADMIN']}
+      redirectPath="/login"
+      errorMessage="Please sign in to view your profile settings."
+    >
+      <ProfileInner />
+    </RoleGuard>
   );
 }

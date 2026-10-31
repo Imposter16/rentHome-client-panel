@@ -15,6 +15,7 @@ import {
   PropertyReview
 } from '@/lib/tenantApi';
 import { getCurrentUser } from '@/lib/authApi';
+import { toast, showToast } from '@/components/Toast';
 import {
   ArrowLeft,
   Share2,
@@ -55,6 +56,24 @@ function PropertyDetailInner({ params }: { params: Promise<{ id: string }> }) {
   const [property, setProperty] = useState<PropertyDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [selectedImageIndex, setSelectedImageIndex] = useState(0);
+
+  // Current authenticated user & role detection
+  const [currentUser, setCurrentUser] = useState<any>(null);
+
+  useEffect(() => {
+    setCurrentUser(getCurrentUser());
+    const handleUserUpdate = (e: any) => {
+      setCurrentUser(e.detail || getCurrentUser());
+    };
+    window.addEventListener('renthome_user_updated', handleUserUpdate);
+    return () => window.removeEventListener('renthome_user_updated', handleUserUpdate);
+  }, []);
+
+  const isLandlord = currentUser?.userType === 'LANDLORD';
+  const isOwnerOrLandlord = isLandlord || (currentUser?.email && property?.ownerEmail && currentUser.email.toLowerCase() === property.ownerEmail.toLowerCase());
+  const backDestination = isLandlord ? '/landlord/dashboard' : '/properties';
+  const backLabel = isLandlord ? 'Back to Landlord Dashboard' : 'Back to Property Discovery';
 
   // User Profile for Pre-fill
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
@@ -266,18 +285,23 @@ function PropertyDetailInner({ params }: { params: Promise<{ id: string }> }) {
           <h2 className="text-xl font-bold text-slate-900">Property Listing Not Found</h2>
           <p className="text-sm text-slate-500 mt-2 mb-6">{error || 'This property is currently inactive or undergoing administrative review.'}</p>
           <Link
-            href="/properties"
+            href={backDestination}
             className="inline-flex items-center gap-2 px-5 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-700 transition-colors shadow-md"
           >
             <ArrowLeft className="w-4 h-4" />
-            <span>Back to Property Discovery</span>
+            <span>{backLabel}</span>
           </Link>
         </div>
       </div>
     );
   }
 
-  const heroImage = property.imageUrl || 'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=1600&q=80';
+  const allImages: string[] = (property.imageUrls && property.imageUrls.length > 0)
+    ? property.imageUrls
+    : (property.imageUrl ? property.imageUrl.split(',').map((s: string) => s.trim()).filter(Boolean) : []);
+
+  const defaultHeroFallback = 'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=1600&q=80';
+  const activeHeroImage = allImages[selectedImageIndex] || allImages[0] || property.imageUrl || defaultHeroFallback;
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
@@ -286,18 +310,30 @@ function PropertyDetailInner({ params }: { params: Promise<{ id: string }> }) {
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Link
-              href="/properties"
-              className="p-2 rounded-full hover:bg-slate-100 text-slate-600 transition-colors"
-              aria-label="Back to listings"
+              href={backDestination}
+              className="p-2 rounded-full hover:bg-slate-100 text-slate-600 transition-colors cursor-pointer"
+              aria-label={backLabel}
+              title={backLabel}
             >
               <ArrowLeft className="w-5 h-5" />
             </Link>
             <div className="flex items-center gap-2">
-              <span className="font-display font-bold text-lg text-slate-900 tracking-tight">RentHome</span>
+              <Link href={backDestination} className="font-display font-bold text-lg text-slate-900 tracking-tight hover:text-indigo-600 transition-colors">
+                RentHome
+              </Link>
               <span className="text-slate-300">/</span>
               <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 uppercase tracking-wide">
                 {property.category}
               </span>
+              {property.status && property.status !== 'APPROVED' && (
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase ${
+                  property.status === 'PENDING'
+                    ? 'bg-amber-100 text-amber-800 border border-amber-200'
+                    : 'bg-rose-100 text-rose-800 border border-rose-200'
+                }`}>
+                  {property.status === 'PENDING' ? 'Pending Approval' : property.status}
+                </span>
+              )}
             </div>
           </div>
 
@@ -335,50 +371,100 @@ function PropertyDetailInner({ params }: { params: Promise<{ id: string }> }) {
 
       {/* Main Content Layout */}
       <main className="flex-1 max-w-7xl mx-auto w-full px-4 lg:px-8 py-6">
+        {/* Status Notice Banner for Owner / Landlord */}
+        {property.status === 'PENDING' && (
+          <div className="mb-6 p-4 rounded-2xl bg-amber-50 border border-amber-200/80 text-amber-900 flex items-start gap-3 shadow-xs">
+            <Clock className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+            <div className="text-xs space-y-0.5">
+              <p className="font-bold text-sm text-amber-950">Property Listing Under Review</p>
+              <p className="text-amber-800">
+                Your property listing has been submitted and is currently <strong>Pending Admin Approval</strong>. It is only visible to you. Once an administrator approves your listing, it will become publicly discoverable by tenants.
+              </p>
+            </div>
+          </div>
+        )}
+        {property.status === 'REJECTED' && (
+          <div className="mb-6 p-4 rounded-2xl bg-rose-50 border border-rose-200/80 text-rose-900 flex items-start gap-3 shadow-xs">
+            <AlertCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+            <div className="text-xs space-y-0.5">
+              <p className="font-bold text-sm text-rose-950">Listing Rejected / Archived</p>
+              <p className="text-rose-800">
+                This listing was rejected or archived by administrators. You can update the details or photos from your landlord dashboard to request re-review.
+              </p>
+            </div>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
           
           {/* Left Column (col-span-8): Hero, Specs, Overview, Amenities */}
           <div className="lg:col-span-8 space-y-6">
             
-            {/* Hero Gallery Card */}
-            <div className="relative w-full h-80 sm:h-96 rounded-2xl overflow-hidden shadow-md bg-slate-900 group">
-              <img
-                src={heroImage}
-                alt={property.name}
-                className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-transparent to-black/20 pointer-events-none"></div>
+            {/* Hero Gallery Card & Thumbnail Selector */}
+            <div className="space-y-3">
+              <div className="relative w-full h-80 sm:h-96 rounded-2xl overflow-hidden shadow-md bg-slate-900 group">
+                <img
+                  src={activeHeroImage}
+                  alt={property.name}
+                  className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-transparent to-black/20 pointer-events-none"></div>
 
-              {/* Floating Badges */}
-              <div className="absolute top-4 left-4 flex gap-2">
-                <span className="inline-flex items-center gap-1.5 bg-emerald-600/90 text-white px-3 py-1 rounded-full text-xs font-semibold backdrop-blur-sm shadow-sm">
-                  <ShieldCheck className="w-3.5 h-3.5" />
-                  Verified PropTech Partner
-                </span>
-              </div>
-
-              <div className="absolute top-4 right-4">
-                <span className="inline-flex items-center gap-1 bg-black/60 text-white px-3 py-1 rounded-full text-xs font-medium backdrop-blur-sm">
-                  <Camera className="w-3.5 h-3.5" />
-                  1 / 12 Photos
-                </span>
-              </div>
-
-              {/* Bottom Hero Overlay */}
-              <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between text-white">
-                <div className="flex items-center gap-2 text-sm font-semibold drop-shadow">
-                  <Sparkles className="w-4 h-4 text-amber-400" />
-                  <span>{property.category} • Prime Exclusive</span>
+                {/* Floating Badges */}
+                <div className="absolute top-4 left-4 flex gap-2">
+                  <span className="inline-flex items-center gap-1.5 bg-emerald-600/90 text-white px-3 py-1 rounded-full text-xs font-semibold backdrop-blur-sm shadow-sm">
+                    <ShieldCheck className="w-3.5 h-3.5" />
+                    Verified PropTech Partner
+                  </span>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => alert('Launching immersive 3D Tour viewer...')}
-                  className="px-3 py-1.5 bg-white/95 hover:bg-white text-indigo-700 font-semibold text-xs rounded-xl backdrop-blur-sm transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
-                >
-                  <Layers className="w-3.5 h-3.5" />
-                  <span>3D Virtual Tour</span>
-                </button>
+
+                <div className="absolute top-4 right-4">
+                  <span className="inline-flex items-center gap-1 bg-black/60 text-white px-3 py-1 rounded-full text-xs font-medium backdrop-blur-sm">
+                    <Camera className="w-3.5 h-3.5" />
+                    {selectedImageIndex + 1} / {allImages.length || 1} Photos
+                  </span>
+                </div>
+
+                {/* Bottom Hero Overlay */}
+                <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between text-white">
+                  <div className="flex items-center gap-2 text-sm font-semibold drop-shadow">
+                    <Sparkles className="w-4 h-4 text-amber-400" />
+                    <span>{property.category} • Prime Exclusive</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => toast.info('Launching immersive 3D Virtual Tour viewer...')}
+                    className="px-3 py-1.5 bg-white/95 hover:bg-white text-indigo-700 font-semibold text-xs rounded-xl backdrop-blur-sm transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Layers className="w-3.5 h-3.5" />
+                    <span>3D Virtual Tour</span>
+                  </button>
+                </div>
               </div>
+
+              {/* Photo Strip Carousel when multiple images exist */}
+              {allImages.length > 1 && (
+                <div className="flex gap-2.5 overflow-x-auto pb-1 pt-0.5 scrollbar-thin">
+                  {allImages.map((img, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => setSelectedImageIndex(idx)}
+                      className={`relative w-20 h-16 rounded-xl overflow-hidden shrink-0 border-2 transition-all cursor-pointer ${
+                        selectedImageIndex === idx
+                          ? 'border-indigo-600 ring-2 ring-indigo-600/30 shadow-md scale-102'
+                          : 'border-slate-200 opacity-60 hover:opacity-100 hover:border-slate-300'
+                      }`}
+                    >
+                      <img
+                        src={img}
+                        alt={`Photo thumbnail ${idx + 1}`}
+                        className="w-full h-full object-cover"
+                      />
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Title & Location Header with Rating Badge */}
@@ -644,86 +730,154 @@ function PropertyDetailInner({ params }: { params: Promise<{ id: string }> }) {
 
           </div>
 
-          {/* Right Column (col-span-4): Sticky Booking & Application Card */}
+          {/* Right Column (col-span-4): Sticky Booking & Application Card or Landlord Controls */}
           <div className="lg:col-span-4">
-            <div className="sticky top-20 bg-white rounded-2xl border border-slate-200/80 p-6 shadow-lg space-y-5">
-              {/* Price display */}
-              <div className="flex items-baseline justify-between border-b border-slate-100 pb-4">
-                <div>
-                  <span className="text-3xl font-extrabold font-display text-slate-900">
-                    ${property.price?.toLocaleString()}
+            {isOwnerOrLandlord ? (
+              <div className="sticky top-20 bg-white rounded-2xl border border-indigo-200/80 p-6 shadow-xl space-y-5">
+                {/* Price display */}
+                <div className="flex items-baseline justify-between border-b border-slate-100 pb-4">
+                  <div>
+                    <span className="text-xs font-bold uppercase tracking-wider text-indigo-600 block mb-1">
+                      Landlord Preview Mode
+                    </span>
+                    <span className="text-3xl font-extrabold font-display text-slate-900">
+                      ${property.price?.toLocaleString()}
+                    </span>
+                    <span className="text-xs text-slate-500 font-medium"> / month</span>
+                  </div>
+                  <span className={`inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full ${
+                    property.status === 'APPROVED'
+                      ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                      : property.status === 'PENDING'
+                      ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                      : 'bg-rose-50 text-rose-700 border border-rose-200'
+                  }`}>
+                    {property.status === 'APPROVED' ? 'Approved' : property.status === 'PENDING' ? 'Pending Approval' : 'Rejected'}
                   </span>
-                  <span className="text-xs text-slate-500 font-medium"> / month</span>
                 </div>
-                <span className={`inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full ${
-                  property.isAvailable
-                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                    : 'bg-amber-50 text-amber-700 border border-amber-200'
-                }`}>
-                  <span className={`w-2 h-2 rounded-full ${property.isAvailable ? 'bg-emerald-500' : 'bg-amber-500'}`}></span>
-                  {property.isAvailable ? 'Immediate / Open' : 'Rented'}
-                </span>
-              </div>
 
-              {/* Security deposit note */}
-              <div className="flex items-center justify-between text-xs py-2.5 px-3 bg-slate-50 rounded-xl border border-slate-100 text-slate-600">
-                <span className="font-medium">Security Deposit</span>
-                <span className="font-bold text-slate-900">
-                  ${property.securityDeposit ? property.securityDeposit.toLocaleString() : property.price?.toLocaleString()} refundable
-                </span>
-              </div>
-
-              {/* In-Person Tour Slot Picker */}
-              <div className="space-y-2">
-                <label className="text-xs font-bold uppercase tracking-wider text-slate-600 block">
-                  Select Tour Visit Slot
-                </label>
-                <div className="grid grid-cols-3 gap-2">
-                  {slots.map((slot, index) => (
-                    <button
-                      key={index}
-                      type="button"
-                      onClick={() => setSelectedSlot(index)}
-                      className={`py-2 px-1 text-center rounded-xl text-xs font-medium transition-all cursor-pointer ${
-                        selectedSlot === index
-                          ? 'bg-indigo-600 text-white shadow-sm ring-2 ring-indigo-200'
-                          : 'bg-slate-50 text-slate-700 hover:bg-slate-100 border border-slate-200/60'
-                      }`}
-                    >
-                      <div className="font-semibold">{slot.day}</div>
-                      <div className={`text-[10px] ${selectedSlot === index ? 'text-indigo-100' : 'text-slate-400'}`}>
-                        {slot.time}
-                      </div>
-                    </button>
-                  ))}
+                {/* Security deposit note */}
+                <div className="flex items-center justify-between text-xs py-2.5 px-3 bg-slate-50 rounded-xl border border-slate-100 text-slate-600">
+                  <span className="font-medium">Security Deposit</span>
+                  <span className="font-bold text-slate-900">
+                    ${property.securityDeposit ? property.securityDeposit.toLocaleString() : property.price?.toLocaleString()} refundable
+                  </span>
                 </div>
+
+                {/* Landlord information box */}
+                <div className="p-3.5 bg-indigo-50/70 rounded-xl border border-indigo-100 text-xs text-indigo-900 space-y-1.5">
+                  <p className="font-bold flex items-center gap-1.5 text-indigo-950">
+                    <ShieldCheck className="w-4 h-4 text-indigo-600" />
+                    Property Owner Workspace
+                  </p>
+                  <p className="text-[11px] text-indigo-800 leading-relaxed">
+                    You are previewing this property as its landlord. You can inspect all details and photos. Tenants will see the standard booking application once approved.
+                  </p>
+                </div>
+
+                {/* Navigation actions */}
+                <div className="space-y-2.5 pt-2">
+                  <Link
+                    href="/landlord/dashboard"
+                    className="w-full py-3.5 px-4 bg-indigo-600 hover:bg-indigo-700 active:scale-[0.99] text-white font-bold rounded-xl text-sm shadow-md shadow-indigo-600/25 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <ArrowLeft className="w-4 h-4" />
+                    <span>Return to Landlord Dashboard</span>
+                  </Link>
+                </div>
+
+                <p className="text-[11px] text-center text-slate-400 leading-normal">
+                  Manage listing availability, edit details, and review tenant inquiries from your dashboard.
+                </p>
               </div>
+            ) : (
+              <div className="sticky top-20 bg-white rounded-2xl border border-slate-200/80 p-6 shadow-lg space-y-5">
+                {/* Price display */}
+                <div className="flex items-baseline justify-between border-b border-slate-100 pb-4">
+                  <div>
+                    <span className="text-3xl font-extrabold font-display text-slate-900">
+                      ${property.price?.toLocaleString()}
+                    </span>
+                    <span className="text-xs text-slate-500 font-medium"> / month</span>
+                  </div>
+                  <span className={`inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full ${
+                    property.isAvailable
+                      ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                      : 'bg-amber-50 text-amber-700 border border-amber-200'
+                  }`}>
+                    <span className={`w-2 h-2 rounded-full ${property.isAvailable ? 'bg-emerald-500' : 'bg-amber-500'}`}></span>
+                    {property.isAvailable ? 'Immediate / Open' : 'Rented'}
+                  </span>
+                </div>
 
-              {/* Action Buttons */}
-              <div className="space-y-2.5 pt-2">
-                <button
-                  type="button"
-                  onClick={handleOpenApplicationModal}
-                  className="w-full py-3.5 px-4 bg-indigo-600 hover:bg-indigo-700 active:scale-[0.99] text-white font-bold rounded-xl text-sm shadow-md shadow-indigo-600/25 transition-all flex items-center justify-center gap-2 cursor-pointer"
-                >
-                  <span>Submit Rental Application Now</span>
-                  <Send className="w-4 h-4" />
-                </button>
+                {/* Security deposit note */}
+                <div className="flex items-center justify-between text-xs py-2.5 px-3 bg-slate-50 rounded-xl border border-slate-100 text-slate-600">
+                  <span className="font-medium">Security Deposit</span>
+                  <span className="font-bold text-slate-900">
+                    ${property.securityDeposit ? property.securityDeposit.toLocaleString() : property.price?.toLocaleString()} refundable
+                  </span>
+                </div>
 
-                <button
-                  type="button"
-                  onClick={() => alert(`Tour slot confirmed for ${slots[selectedSlot].day} at ${slots[selectedSlot].time}. The leasing manager will coordinate directions.`)}
-                  className="w-full py-2.5 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl text-xs transition-colors flex items-center justify-center gap-2 cursor-pointer"
-                >
-                  <Calendar className="w-4 h-4" />
-                  <span>Reserve Visit for {slots[selectedSlot].day}</span>
-                </button>
+                {/* In-Person Tour Slot Picker */}
+                <div className="space-y-2">
+                  <label className="text-xs font-bold uppercase tracking-wider text-slate-600 block">
+                    Select Tour Visit Slot
+                  </label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {slots.map((slot, index) => (
+                      <button
+                        key={index}
+                        type="button"
+                        onClick={() => setSelectedSlot(index)}
+                        className={`py-2 px-1 text-center rounded-xl text-xs font-medium transition-all cursor-pointer ${
+                          selectedSlot === index
+                            ? 'bg-indigo-600 text-white shadow-sm ring-2 ring-indigo-200'
+                            : 'bg-slate-50 text-slate-700 hover:bg-slate-100 border border-slate-200/60'
+                        }`}
+                      >
+                        <div className="font-semibold">{slot.day}</div>
+                        <div className={`text-[10px] ${selectedSlot === index ? 'text-indigo-100' : 'text-slate-400'}`}>
+                          {slot.time}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Action Buttons */}
+                <div className="space-y-2.5 pt-2">
+                  {property.status && property.status !== 'APPROVED' ? (
+                    <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-center text-xs text-amber-800 font-medium">
+                      Applications will open once this listing is approved by admin.
+                    </div>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={handleOpenApplicationModal}
+                        className="w-full py-3.5 px-4 bg-indigo-600 hover:bg-indigo-700 active:scale-[0.99] text-white font-bold rounded-xl text-sm shadow-md shadow-indigo-600/25 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                      >
+                        <span>Submit Rental Application Now</span>
+                        <Send className="w-4 h-4" />
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => toast.success(`Tour slot confirmed for ${slots[selectedSlot].day} at ${slots[selectedSlot].time}. The leasing manager will coordinate directions.`)}
+                        className="w-full py-2.5 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl text-xs transition-colors flex items-center justify-center gap-2 cursor-pointer"
+                      >
+                        <Calendar className="w-4 h-4" />
+                        <span>Reserve Visit for {slots[selectedSlot].day}</span>
+                      </button>
+                    </>
+                  )}
+                </div>
+
+                <p className="text-[11px] text-center text-slate-400 leading-normal">
+                  Pre-screened verification • Direct landlord review • Zero platform application fees
+                </p>
               </div>
-
-              <p className="text-[11px] text-center text-slate-400 leading-normal">
-                Pre-screened verification • Direct landlord review • Zero platform application fees
-              </p>
-            </div>
+            )}
           </div>
 
         </div>

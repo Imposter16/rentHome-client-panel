@@ -6,6 +6,8 @@ export const metadata: Metadata = {
   description: 'Streamlined discovery, instant booking, tenant screening, and lease management for modern renters and landlords.',
 };
 
+import { ToastContainer } from '@/components/Toast';
+
 export default function RootLayout({
   children,
 }: {
@@ -18,6 +20,7 @@ export default function RootLayout({
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
       </head>
       <body className="min-h-full flex flex-col bg-slate-50 text-slate-900">
+        <ToastContainer />
         {children}
       </body>
     </html>

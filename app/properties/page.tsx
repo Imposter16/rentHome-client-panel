@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { fetchProperties, PropertyDetails } from '@/lib/tenantApi';
 import { getCurrentUser, logout } from '@/lib/authApi';
@@ -25,6 +26,7 @@ import {
 import { UserProfile } from '@/lib/userApi';
 
 export default function PropertiesDiscoveryPage() {
+  const router = useRouter();
   const [properties, setProperties] = useState<PropertyDetails[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -37,17 +39,25 @@ export default function PropertiesDiscoveryPage() {
   const [user, setUser] = useState<UserProfile | null>(null);
 
   useEffect(() => {
-    setUser(getCurrentUser());
+    const cur = getCurrentUser();
+    // Enforce role isolation: Landlords belong on Landlord Dashboard
+    if (cur?.userType === 'LANDLORD') {
+      router.replace('/landlord/dashboard');
+      return;
+    }
+    setUser(cur);
+
     const handleUserUpdate = (e: any) => {
-      if (e.detail) {
-        setUser(e.detail);
-      } else {
-        setUser(getCurrentUser());
+      const updated = e.detail || getCurrentUser();
+      if (updated?.userType === 'LANDLORD') {
+        router.replace('/landlord/dashboard');
+        return;
       }
+      setUser(updated);
     };
     window.addEventListener('renthome_user_updated', handleUserUpdate);
     return () => window.removeEventListener('renthome_user_updated', handleUserUpdate);
-  }, []);
+  }, [router]);
 
   const loadProperties = async () => {
     setLoading(true);
@@ -270,7 +280,7 @@ export default function PropertiesDiscoveryPage() {
                 {/* Property Card Hero Image */}
                 <div className="relative w-full h-48 bg-slate-900 overflow-hidden">
                   <img
-                    src={prop.imageUrl || 'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=800&q=80'}
+                    src={(prop.imageUrls && prop.imageUrls[0]) || (prop.imageUrl ? prop.imageUrl.split(',')[0].trim() : '') || 'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=800&q=80'}
                     alt={prop.name}
                     className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
                   />
@@ -280,7 +290,12 @@ export default function PropertiesDiscoveryPage() {
                       Verified
                     </span>
                   </div>
-                  <div className="absolute top-3 right-3">
+                  <div className="absolute top-3 right-3 flex items-center gap-1.5">
+                    {((prop.imageUrls && prop.imageUrls.length > 1) || (prop.imageUrl && prop.imageUrl.includes(','))) && (
+                      <span className="bg-slate-950/70 text-white px-2 py-0.5 rounded-md text-[11px] font-semibold backdrop-blur-xs">
+                        📷 {prop.imageUrls?.length || (prop.imageUrl ? prop.imageUrl.split(',').filter(Boolean).length : 0)}
+                      </span>
+                    )}
                     <span className="bg-slate-950/70 text-white px-2 py-0.5 rounded-md text-[11px] font-semibold backdrop-blur-xs">
                       {prop.category}
                     </span>

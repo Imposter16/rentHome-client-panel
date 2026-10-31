@@ -40,6 +40,53 @@ function getCookie(name: string): string | null {
   return match ? decodeURIComponent(match[2]) : null;
 }
 
+import Swal from 'sweetalert2';
+
+let isSessionExpiring = false;
+
+export function handleSessionExpired(): void {
+  // a. Instantly purge all saved auth tokens and user data
+  clearAuthToken();
+
+  if (typeof window === 'undefined') return;
+  if (isSessionExpiring) return;
+  isSessionExpiring = true;
+
+  // b. Trigger SweetAlert2 popup
+  Swal.fire({
+    title: 'Session Expired',
+    text: 'Your session has expired or is unauthenticated. Please log in again.',
+    icon: 'warning',
+    confirmButtonText: 'Log In Now',
+    confirmButtonColor: '#4f46e5',
+    allowOutsideClick: true,
+    allowEscapeKey: true,
+  }).then(() => {
+    // c. Forcefully redirect to /login
+    isSessionExpiring = false;
+    window.location.href = '/login';
+  });
+}
+
+export function isSessionExpiredPayload(status: number, payload: any): boolean {
+  if (status === 401) {
+    return true;
+  }
+  if (payload && typeof payload === 'object') {
+    if (payload.status === false && typeof payload.message === 'string') {
+      const msg = payload.message.toLowerCase();
+      if (
+        msg.includes('user is not authenticated') ||
+        msg.includes('token expired') ||
+        msg.includes('unauthorized')
+      ) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 async function request<T>(
   endpoint: string,
   method: 'GET' | 'POST',
@@ -77,8 +124,15 @@ async function request<T>(
       json = null;
     }
 
+    // Inspect API response payload & status for session expiration
+    if (isSessionExpiredPayload(res.status, json)) {
+      handleSessionExpired();
+      const errorMsg = json?.message || 'Your session has expired or is unauthenticated. Please log in again.';
+      throw new Error(errorMsg);
+    }
+
     if (!res.ok) {
-      const errorMsg = json?.message || (res.status === 401 ? 'Session expired or unauthorized. Please log in.' : `Request failed (${res.status})`);
+      const errorMsg = json?.message || `Request failed (${res.status})`;
       throw new Error(errorMsg);
     }
 
