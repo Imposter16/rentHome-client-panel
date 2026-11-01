@@ -18,7 +18,12 @@ import {
   TrendingUp,
   FileText,
   Pencil,
-  Lock
+  Lock,
+  CheckCircle2,
+  XCircle,
+  Briefcase,
+  DollarSign,
+  Calendar
 } from 'lucide-react';
 import RoleGuard from '@/components/RoleGuard';
 import ImageUploader, { ImageItem, parseImageUrlsToItems } from '@/components/ImageUploader';
@@ -196,6 +201,22 @@ function LandlordDashboardInner() {
       loadData();
     } catch (err: any) {
       showToast(err.message || 'Failed to toggle availability', 'error');
+    }
+  };
+
+  const [updatingBookingId, setUpdatingBookingId] = useState<number | null>(null);
+
+  const handleUpdateBookingStatus = async (bookingId: number, newStatus: string) => {
+    try {
+      setUpdatingBookingId(bookingId);
+      await apiClient.post(`/app/landlord/bookings/${bookingId}/update-status`, { newStatus });
+      const friendlyStatus = newStatus.replace('_', ' ').toLowerCase();
+      showToast(`Inquiry status updated to ${friendlyStatus}.`, 'success');
+      loadData();
+    } catch (err: any) {
+      showToast(err.message || 'Failed to update booking status', 'error');
+    } finally {
+      setUpdatingBookingId(null);
     }
   };
 
@@ -459,9 +480,16 @@ function LandlordDashboardInner() {
 
         {/* Inquiries Table Card */}
         <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-5">
-          <div className="mb-4 pb-3 border-b border-slate-100">
-            <h2 className="text-base font-bold font-display text-slate-900">Tenant Booking Inquiries</h2>
-            <p className="text-xs text-slate-500">Inbound requests from prospective tenants interested in your listings</p>
+          <div className="mb-4 pb-3 border-b border-slate-100 flex items-center justify-between">
+            <div>
+              <h2 className="text-base font-bold font-display text-slate-900">Tenant Booking Inquiries</h2>
+              <p className="text-xs text-slate-500">Inbound rental applications & tour visit requests for your listings</p>
+            </div>
+            {bookings.length > 0 && (
+              <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-100">
+                {bookings.length} {bookings.length === 1 ? 'Inquiry' : 'Inquiries'}
+              </span>
+            )}
           </div>
 
           {loading ? (
@@ -473,35 +501,136 @@ function LandlordDashboardInner() {
             <div className="py-8 text-center text-slate-500 space-y-1">
               <CalendarCheck className="w-7 h-7 text-slate-300 mx-auto" />
               <p className="text-xs font-medium">No booking inquiries received yet.</p>
+              <p className="text-[11px] text-slate-400">When tenants submit applications, they will stream here in real-time.</p>
             </div>
           ) : (
             <div className="divide-y divide-slate-100">
-              {bookings.map((b) => (
-                <div key={b.id} className="py-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-xs text-slate-900">{b.tenantName}</span>
-                      <span className="text-[10px] text-slate-400">• {b.tenantEmail}</span>
-                    </div>
-                    <p className="text-xs text-slate-600 mt-0.5">
-                      Property: <span className="font-semibold text-slate-800">{b.propertyName}</span>
-                    </p>
-                    {b.message && (
-                      <p className="text-xs text-slate-500 italic mt-0.5 bg-slate-50 p-1.5 rounded-lg border border-slate-100">
-                        &quot;{b.message}&quot;
+              {bookings.map((inquiry) => {
+                const propertyName = inquiry.property?.name || inquiry.propertyName || inquiry.propertyTitle || 'Property Listing';
+                const applicantName = inquiry.fullName || inquiry.tenantName || 'Applicant';
+                const visitSlot = inquiry.preferredVisitSlot || inquiry.tourSlot || inquiry.preferredTourDate || 'Not specified';
+                const isActionLoading = updatingBookingId === inquiry.id;
+
+                return (
+                  <div key={inquiry.id} className="py-4.5 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
+                    {/* Applicant & Property Overview */}
+                    <div className="space-y-2 flex-1 min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-bold text-sm text-slate-900">{applicantName}</span>
+                        {(inquiry.tenantEmail || inquiry.email) && (
+                          <span className="text-xs text-slate-400">• {inquiry.tenantEmail || inquiry.email}</span>
+                        )}
+                        {(inquiry.tenantMobile || inquiry.mobileNumber) && (
+                          <span className="text-xs text-slate-400">• {inquiry.tenantMobile || inquiry.mobileNumber}</span>
+                        )}
+                        <span className={`text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full border ${
+                          inquiry.status === 'APPROVED'
+                            ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                            : inquiry.status === 'REJECTED'
+                            ? 'bg-rose-50 text-rose-800 border-rose-200'
+                            : inquiry.status === 'VISIT_SCHEDULED'
+                            ? 'bg-indigo-50 text-indigo-800 border-indigo-200'
+                            : inquiry.status === 'UNDER_REVIEW'
+                            ? 'bg-amber-50 text-amber-800 border-amber-200'
+                            : 'bg-sky-50 text-sky-800 border-sky-200'
+                        }`}>
+                          {inquiry.status}
+                        </span>
+                      </div>
+
+                      {/* Property link */}
+                      <p className="text-xs text-slate-600 flex items-center gap-1.5">
+                        <Building2 className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                        <span>Property:</span>
+                        <span className="font-semibold text-slate-800">{propertyName}</span>
+                        {inquiry.property?.city && (
+                          <span className="text-slate-400">({inquiry.property.city})</span>
+                        )}
                       </p>
-                    )}
+
+                      {/* Dynamic Detail Badges */}
+                      <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-600">
+                        {inquiry.occupation && (
+                          <span className="inline-flex items-center gap-1 bg-slate-50 px-2.5 py-1 rounded-lg border border-slate-200/60 font-medium">
+                            <Briefcase className="w-3 h-3 text-slate-400" />
+                            {inquiry.occupation}
+                          </span>
+                        )}
+                        {inquiry.monthlyNetIncome != null && (
+                          <span className="inline-flex items-center gap-1 bg-slate-50 px-2.5 py-1 rounded-lg border border-slate-200/60 font-medium">
+                            <DollarSign className="w-3 h-3 text-emerald-500" />
+                            ${Number(inquiry.monthlyNetIncome).toLocaleString()} / mo income
+                          </span>
+                        )}
+                        {inquiry.preferredMoveInDate && (
+                          <span className="inline-flex items-center gap-1 bg-slate-50 px-2.5 py-1 rounded-lg border border-slate-200/60 font-medium">
+                            <Clock className="w-3 h-3 text-slate-400" />
+                            Move-in: {inquiry.preferredMoveInDate}
+                          </span>
+                        )}
+                        {inquiry.numberOfOccupants != null && (
+                          <span className="inline-flex items-center gap-1 bg-slate-50 px-2.5 py-1 rounded-lg border border-slate-200/60 font-medium">
+                            <Users className="w-3 h-3 text-slate-400" />
+                            {inquiry.numberOfOccupants} occupant(s)
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Tour Visit Timing Box */}
+                      <div className="inline-flex items-center gap-2 p-2 rounded-xl bg-indigo-50/70 border border-indigo-100 text-xs">
+                        <CalendarCheck className="w-4 h-4 text-indigo-600 shrink-0" />
+                        <span className="text-slate-600">Requested Tour Slot:</span>
+                        <strong className="text-indigo-950 font-semibold">{visitSlot}</strong>
+                      </div>
+
+                      {inquiry.remarks && (
+                        <p className="text-xs text-slate-500 italic bg-slate-50 p-2 rounded-lg border border-slate-100">
+                          Note: {inquiry.remarks}
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Action Buttons */}
+                    <div className="flex flex-wrap lg:flex-col items-end gap-1.5 shrink-0 self-end lg:self-center">
+                      {inquiry.status !== 'APPROVED' && (
+                        <button
+                          type="button"
+                          disabled={isActionLoading}
+                          onClick={() => handleUpdateBookingStatus(inquiry.id, 'APPROVED')}
+                          className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white shadow-2xs transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                        >
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          <span>Approve / Accept</span>
+                        </button>
+                      )}
+
+                      {inquiry.status !== 'VISIT_SCHEDULED' && inquiry.status !== 'APPROVED' && (
+                        <button
+                          type="button"
+                          disabled={isActionLoading}
+                          onClick={() => handleUpdateBookingStatus(inquiry.id, 'VISIT_SCHEDULED')}
+                          className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                        >
+                          <Calendar className="w-3.5 h-3.5" />
+                          <span>Schedule Tour</span>
+                        </button>
+                      )}
+
+                      {inquiry.status !== 'REJECTED' && (
+                        <button
+                          type="button"
+                          disabled={isActionLoading}
+                          onClick={() => handleUpdateBookingStatus(inquiry.id, 'REJECTED')}
+                          className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-100 hover:bg-rose-50 hover:text-rose-700 text-slate-600 border border-slate-200 transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                        >
+                          <XCircle className="w-3.5 h-3.5" />
+                          <span>Reject</span>
+                        </button>
+                      )}
+                    </div>
                   </div>
-                  <div className="text-right shrink-0">
-                    <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-purple-50 text-purple-700">
-                      {b.status}
-                    </span>
-                    <p className="text-[10px] text-slate-400 mt-1">
-                      Tour: {b.preferredTourDate || 'Not specified'}
-                    </p>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

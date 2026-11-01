@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, use, Suspense } from 'react';
+import { useEffect, useState, use, useMemo, Suspense } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { 
@@ -47,6 +47,75 @@ import {
   MessageSquare,
   User
 } from 'lucide-react';
+
+export interface DynamicTourSlot {
+  dateStr: string; // "YYYY-MM-DD"
+  displayDay: string; // "Today", "Tomorrow", "Mon"
+  displayDate: string; // "Nov 1"
+  fullLabel: string; // "Today (Nov 1)" or "Mon, Nov 3"
+}
+
+function computeDynamicTourDays(): DynamicTourSlot[] {
+  const now = new Date();
+  const istFormatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: 'numeric',
+    hour12: false,
+  });
+
+  const parts = istFormatter.formatToParts(now);
+  const partMap: Record<string, string> = {};
+  parts.forEach((p) => {
+    partMap[p.type] = p.value;
+  });
+
+  const year = parseInt(partMap.year, 10);
+  const month = parseInt(partMap.month, 10) - 1;
+  const day = parseInt(partMap.day, 10);
+  const hour = parseInt(partMap.hour, 10); // 0-23 in IST
+
+  // 6 PM IST Cutoff Rule:
+  // If BEFORE 6:00 PM IST (hour < 18): Include TODAY as the first available date + next 6 days (7 total days)
+  // If AFTER 6:00 PM IST (hour >= 18): Exclude TODAY, start from TOMORROW + next 6 days (7 total days)
+  const startOffset = hour >= 18 ? 1 : 0;
+
+  const result: DynamicTourSlot[] = [];
+  for (let i = 0; i < 7; i++) {
+    const offsetDay = startOffset + i;
+    const targetDate = new Date(Date.UTC(year, month, day + offsetDay, 12, 0, 0));
+
+    const yyyy = targetDate.getUTCFullYear();
+    const mm = String(targetDate.getUTCMonth() + 1).padStart(2, '0');
+    const dd = String(targetDate.getUTCDate()).padStart(2, '0');
+    const dateStr = `${yyyy}-${mm}-${dd}`;
+
+    const weekdayShort = targetDate.toLocaleDateString('en-US', { weekday: 'short', timeZone: 'UTC' });
+    const monthShort = targetDate.toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' });
+    const dayNum = targetDate.getUTCDate();
+
+    let displayDay = weekdayShort;
+    if (offsetDay === 0) displayDay = 'Today';
+    else if (offsetDay === 1) displayDay = 'Tomorrow';
+
+    result.push({
+      dateStr,
+      displayDay,
+      displayDate: `${monthShort} ${dayNum}`,
+      fullLabel:
+        offsetDay === 0
+          ? `Today (${monthShort} ${dayNum})`
+          : offsetDay === 1
+          ? `Tomorrow (${monthShort} ${dayNum})`
+          : `${weekdayShort}, ${monthShort} ${dayNum}`,
+    });
+  }
+
+  return result;
+}
 
 function PropertyDetailInner({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
@@ -162,13 +231,16 @@ function PropertyDetailInner({ params }: { params: Promise<{ id: string }> }) {
   // Micro-interactions
   const [isFavorite, setIsFavorite] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [selectedSlot, setSelectedSlot] = useState(0);
 
-  const slots = [
-    { day: 'Thu, Oct 3', time: '10:00 AM' },
-    { day: 'Fri, Oct 4', time: '02:30 PM' },
-    { day: 'Sat, Oct 5', time: '11:15 AM' },
-  ];
+  // Dynamic Tour Slots with 6 PM IST Cutoff Rule
+  const tourDays = useMemo(() => computeDynamicTourDays(), []);
+  const [selectedDayIndex, setSelectedDayIndex] = useState(0);
+  const [selectedTimeSlot, setSelectedTimeSlot] = useState('10:00 AM');
+
+  const preferredVisitSlot = useMemo(() => {
+    if (!tourDays[selectedDayIndex]) return '';
+    return `${tourDays[selectedDayIndex].dateStr} ${selectedTimeSlot}`;
+  }, [tourDays, selectedDayIndex, selectedTimeSlot]);
 
   // Load Property Details
   useEffect(() => {
@@ -246,6 +318,7 @@ function PropertyDetailInner({ params }: { params: Promise<{ id: string }> }) {
         monthlyNetIncome: Number(monthlyNetIncome) || 5000,
         numberOfOccupants: Number(numberOfOccupants) || 1,
         preferredMoveInDate,
+        preferredVisitSlot,
       });
       setApplicationSuccess(true);
     } catch (err: any) {
@@ -818,29 +891,64 @@ function PropertyDetailInner({ params }: { params: Promise<{ id: string }> }) {
                   </span>
                 </div>
 
-                {/* In-Person Tour Slot Picker */}
-                <div className="space-y-2">
-                  <label className="text-xs font-bold uppercase tracking-wider text-slate-600 block">
-                    Select Tour Visit Slot
-                  </label>
-                  <div className="grid grid-cols-3 gap-2">
-                    {slots.map((slot, index) => (
+                {/* Dynamic Tour Slot Picker with 6 PM IST Rule */}
+                <div className="space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold uppercase tracking-wider text-slate-700 block">
+                      Select Tour Visit Slot
+                    </label>
+                    <span className="text-[10px] text-indigo-600 font-semibold bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-100">
+                      6 PM IST Rule Active
+                    </span>
+                  </div>
+
+                  {/* Day chips */}
+                  <div className="grid grid-cols-3 sm:grid-cols-4 gap-1.5 max-h-36 overflow-y-auto p-0.5">
+                    {tourDays.map((td, index) => (
                       <button
-                        key={index}
+                        key={td.dateStr}
                         type="button"
-                        onClick={() => setSelectedSlot(index)}
-                        className={`py-2 px-1 text-center rounded-xl text-xs font-medium transition-all cursor-pointer ${
-                          selectedSlot === index
+                        onClick={() => setSelectedDayIndex(index)}
+                        className={`py-2 px-1.5 text-center rounded-xl text-xs font-medium transition-all cursor-pointer ${
+                          selectedDayIndex === index
                             ? 'bg-indigo-600 text-white shadow-sm ring-2 ring-indigo-200'
                             : 'bg-slate-50 text-slate-700 hover:bg-slate-100 border border-slate-200/60'
                         }`}
                       >
-                        <div className="font-semibold">{slot.day}</div>
-                        <div className={`text-[10px] ${selectedSlot === index ? 'text-indigo-100' : 'text-slate-400'}`}>
-                          {slot.time}
+                        <div className="font-bold text-[11px] leading-tight">{td.displayDay}</div>
+                        <div className={`text-[10px] mt-0.5 ${selectedDayIndex === index ? 'text-indigo-100' : 'text-slate-400'}`}>
+                          {td.displayDate}
                         </div>
                       </button>
                     ))}
+                  </div>
+
+                  {/* Time slot selector */}
+                  <div className="pt-1 border-t border-slate-100 space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-semibold text-slate-600">Select Time:</span>
+                      <div className="flex gap-1.5">
+                        {['10:00 AM', '02:00 PM', '05:00 PM'].map((slotTime) => (
+                          <button
+                            key={slotTime}
+                            type="button"
+                            onClick={() => setSelectedTimeSlot(slotTime)}
+                            className={`px-2.5 py-1 text-xs rounded-lg font-medium transition-all cursor-pointer ${
+                              selectedTimeSlot === slotTime
+                                ? 'bg-indigo-100 text-indigo-700 font-bold border border-indigo-200 shadow-2xs'
+                                : 'bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200/60'
+                            }`}
+                          >
+                            {slotTime}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="p-2 bg-indigo-50/70 rounded-xl border border-indigo-100 text-indigo-900 text-[11px] flex items-center justify-between">
+                      <span className="text-slate-500">Selected Appointment:</span>
+                      <span className="font-bold">{tourDays[selectedDayIndex]?.fullLabel} @ {selectedTimeSlot}</span>
+                    </div>
                   </div>
                 </div>
 
@@ -863,11 +971,11 @@ function PropertyDetailInner({ params }: { params: Promise<{ id: string }> }) {
 
                       <button
                         type="button"
-                        onClick={() => toast.success(`Tour slot confirmed for ${slots[selectedSlot].day} at ${slots[selectedSlot].time}. The leasing manager will coordinate directions.`)}
+                        onClick={() => toast.success(`Tour slot confirmed for ${tourDays[selectedDayIndex]?.fullLabel} at ${selectedTimeSlot}. The leasing manager will coordinate directions.`)}
                         className="w-full py-2.5 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl text-xs transition-colors flex items-center justify-center gap-2 cursor-pointer"
                       >
                         <Calendar className="w-4 h-4" />
-                        <span>Reserve Visit for {slots[selectedSlot].day}</span>
+                        <span>Reserve Visit for {tourDays[selectedDayIndex]?.displayDay}</span>
                       </button>
                     </>
                   )}
@@ -914,9 +1022,10 @@ function PropertyDetailInner({ params }: { params: Promise<{ id: string }> }) {
                     Your inquiry has been successfully transmitted to the property owner with status <strong className="text-emerald-700">SUBMITTED</strong>.
                   </p>
                 </div>
-                <div className="p-3 bg-slate-50 rounded-xl text-xs text-slate-600 text-left border border-slate-100">
+                <div className="p-3 bg-slate-50 rounded-xl text-xs text-slate-600 text-left border border-slate-100 space-y-1">
                   <p><strong>Applicant:</strong> {fullName}</p>
                   <p><strong>Move-in Date:</strong> {preferredMoveInDate}</p>
+                  <p><strong>Tour Visit Slot:</strong> <span className="text-indigo-700 font-bold">{preferredVisitSlot || 'Not specified'}</span></p>
                   <p><strong>Monthly Rent:</strong> ${property.price?.toLocaleString()} / mo</p>
                 </div>
                 <button
@@ -1022,6 +1131,58 @@ function PropertyDetailInner({ params }: { params: Promise<{ id: string }> }) {
                         onChange={(e) => setPreferredMoveInDate(e.target.value)}
                         className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:bg-white focus:border-indigo-600 focus:ring-2 focus:ring-indigo-100 outline-none transition-all"
                       />
+                    </div>
+                  </div>
+
+                  {/* Tour Slot Confirmation in Modal */}
+                  <div className="p-3 bg-indigo-50/60 rounded-xl border border-indigo-100 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="block text-xs font-bold text-indigo-950 uppercase tracking-wider">
+                        Preferred In-Person Tour Slot
+                      </label>
+                      <span className="text-[10px] text-indigo-600 font-semibold">6 PM IST Rule</span>
+                    </div>
+
+                    <div className="grid grid-cols-4 gap-1">
+                      {tourDays.slice(0, 4).map((td, idx) => (
+                        <button
+                          key={td.dateStr}
+                          type="button"
+                          onClick={() => setSelectedDayIndex(idx)}
+                          className={`py-1.5 px-1 rounded-lg text-xs font-medium text-center transition-all cursor-pointer ${
+                            selectedDayIndex === idx
+                              ? 'bg-indigo-600 text-white shadow-2xs'
+                              : 'bg-white text-slate-700 border border-slate-200/80 hover:bg-slate-50'
+                          }`}
+                        >
+                          <div className="font-bold text-[10px]">{td.displayDay}</div>
+                          <div className={`text-[9px] ${selectedDayIndex === idx ? 'text-indigo-100' : 'text-slate-400'}`}>
+                            {td.displayDate}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="flex items-center justify-between gap-2 pt-1 border-t border-indigo-100/60">
+                      <div className="flex gap-1">
+                        {['10:00 AM', '02:00 PM', '05:00 PM'].map((t) => (
+                          <button
+                            key={t}
+                            type="button"
+                            onClick={() => setSelectedTimeSlot(t)}
+                            className={`px-2 py-0.5 text-[11px] rounded font-medium transition-all cursor-pointer ${
+                              selectedTimeSlot === t
+                                ? 'bg-indigo-600 text-white font-bold'
+                                : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+                            }`}
+                          >
+                            {t}
+                          </button>
+                        ))}
+                      </div>
+                      <span className="text-[11px] font-bold text-indigo-900 bg-white px-2 py-0.5 rounded border border-indigo-100">
+                        {preferredVisitSlot}
+                      </span>
                     </div>
                   </div>
 

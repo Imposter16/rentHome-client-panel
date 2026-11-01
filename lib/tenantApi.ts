@@ -35,6 +35,7 @@ export interface BookingInquiryPayload {
   monthlyNetIncome: number;
   numberOfOccupants: number;
   preferredMoveInDate: string; // YYYY-MM-DD
+  preferredVisitSlot?: string; // e.g. "2026-11-02 10:00 AM"
 }
 
 export interface BookingInquiryResponse {
@@ -44,10 +45,15 @@ export interface BookingInquiryResponse {
   monthlyNetIncome: number;
   numberOfOccupants: number;
   preferredMoveInDate: string;
+  preferredVisitSlot?: string;
   status: 'SUBMITTED' | 'UNDER_REVIEW' | 'VISIT_SCHEDULED' | 'APPROVED' | 'REJECTED' | 'CANCELLED';
   createdAt: string;
   property: PropertyDetails;
   remarks?: string;
+  tenantEmail?: string;
+  tenantMobile?: string;
+  tenantName?: string;
+  propertyName?: string;
 }
 
 export interface UserProfile {
@@ -137,15 +143,7 @@ export async function fetchPropertyById(id: string | number): Promise<PropertyDe
  * POST /api/app/tenant/bookings/inquire
  */
 export async function submitBookingInquiry(payload: BookingInquiryPayload): Promise<BookingInquiryResponse> {
-  const formData = new FormData();
-  formData.append('propertyId', String(payload.propertyId));
-  formData.append('fullName', payload.fullName);
-  formData.append('occupation', payload.occupation);
-  formData.append('monthlyNetIncome', String(payload.monthlyNetIncome));
-  formData.append('numberOfOccupants', String(payload.numberOfOccupants));
-  formData.append('preferredMoveInDate', payload.preferredMoveInDate);
-
-  return apiClient.post<BookingInquiryResponse>('/app/tenant/bookings/inquire', formData, true);
+  return apiClient.post<BookingInquiryResponse>('/app/tenant/bookings/inquire', payload);
 }
 
 /**
